@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+
+import sys
+import os
+import shutil
+
+lines_begin = '''<!DOCTYPE html>
+<html lang="ru-RU">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<title>%name%</title>
+<link href="%dir%/style.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+'''
+
+lines_end = '''</body>
+</html>'''
+
+is_code = False
+level_ul = 0
+img_number = 0
+n_header = 0
+
+
+def create_content(ilines):
+	olines = ['<h2>Оглавление</h2>\n']
+	n = 0
+	prev_level = 0
+	for line in ilines:
+		line = line.strip()
+		if line.startswith('<h'):
+			level = int(line[2])
+			if level > prev_level:
+				prev_level = level
+				olines.append('<ul>\n')
+			if level < prev_level:
+				prev_level = level
+				olines.append('</ul>\n')
+			line = line.replace('<h{}>'.format(level), '')
+			line = line.replace('</h{}>'.format(level), '')
+			n += 1
+			olines.append('<li><a href="#header_{0:d}">'.format(n) + line + '</a></li>' + '\n')
+	if prev_level > 0:
+		olines.append('</ul>\n')
+	return olines
+
+
+def make_line(iline, name):
+	global is_code
+	global level_ul
+	global img_number
+	global n_header
+
+	if iline.startswith('<h>'):
+		return '<h1>{}</h1>'.format(iline.replace('<h>', ''))
+	if iline.startswith('<h') and len(iline) > 2:
+		level = iline[2]
+		if n_header is None:
+			return '<h{}>{}</h{}>'.format(level, iline[4:], level)
+		else:
+			n_header += 1
+			return '<h{} id="header_{}">{}</h{}>'.format(level, n_header, iline[4:], level)
+	if iline.startswith('<title>'):
+		return '<p><b><i>{}</i></b></p>'.format(iline.replace('<title>', '').replace('<code>$ ', ''))
+	if iline.strip() == '<code>':
+		is_code = True
+		return iline
+	if iline.strip() == '</code>':
+		is_code = False
+		return iline
+	if iline.strip() == '<ul>' or iline.strip() == '<ol>':
+		level_ul += 1
+		return iline
+	if iline.strip() == '</ul>' or iline.strip() == '</ol>':
+		level_ul -= 1
+		return iline
+	if iline.startswith('<code>'):
+		return '{}</code>'.format(iline)
+	if is_code:
+		return '{}<br>'.format(iline).replace(' ', '&nbsp;')
+	if level_ul > 0:
+		return '<li>{}</li>'.format(iline)
+	if iline.startswith('<img'):
+		img_number += 1
+		return '<p align=center><img src="./{}_files/{}.png"/></p>'.format(name, img_number)
+	return '<p>{}</p>'.format(iline)
+
+
+def create_book_page(name, book_file, html_file):
+	global is_code
+	global level_ul
+	global img_number
+	global n_header
+
+	is_code = False
+	level_ul = 0
+	img_number = 0
+
+	title = ''
+
+	with open(book_file, 'r') as file:
+		ilines = file.readlines()
+
+	olines = []
+	for line in ilines:
+		if len(line.strip()) > 0:
+			if line.startswith('<title>'):
+				title = line.replace('<title>', '').replace('<code>$ ', '').strip()
+			if line.startswith('<content'):
+				n_header = 0
+				olines.extend(create_content(ilines[ilines.index(line):]))
+				continue
+			if is_code:
+				olines.append(make_line(line, name) + '\n')
+			else:
+				olines.append(make_line(line.strip(), name) + '\n')
+		elif is_code:
+			olines.append('<br>\n')
+
+	with open(html_file, 'w') as file:
+		style_dir = '..'
+		for i in range(1, html_file.count('/') - 2):
+			style_dir += '/..'
+		file.write(lines_begin.replace('%name%', name).replace('%dir%', style_dir))
+		file.writelines(olines)
+		file.write(lines_end)
+
+	return title
+
+
+def copy_images(dir):
+	src_path = '{}/{}'.format(src, dir)
+	for img_dir in filter(lambda x: os.path.isdir(src_path + '/' + x) and x.endswith('_files'), os.listdir(src_path)):
+		shutil.copytree('{}/{}'.format(src_path, img_dir), '{}/{}/{}/'.format(book_name, dir, img_dir))
+
+
+def get_list_books(dir):
+	return sorted(filter(lambda x: x.endswith('.book'), os.listdir(dir)))
+
+
+def get_list_parts(dir):
+	return sorted(filter(lambda x: os.path.isdir(dir + '/' + x) and not x.endswith('_files'), os.listdir(dir)))
+
+
+def add_part(dir, lines):
+	new_lines = []
+	copy_images(dir)
+	for book in get_list_books('{}/{}'.format(src, dir)):
+		name = book.replace('.book', '')
+		title = create_book_page(name, "{}/{}/{}".format(src, dir, book), '{}/{}/{}.html'.format(book_name, dir, name))
+		if len(title) == 0:
+			new_lines.append('<li><a href="{}/{}.html"><b>{}</b></a></li>'.format(dir, name, name))
+		else:
+			new_lines.append('<li><p><a href="{}/{}.html"><b>{}</b></a><br><i>{}</i></p></li>'.format(dir, name, name, title))
+		new_lines.append('</li>')
+	for part in get_list_parts(src + '/' + dir):
+		os.mkdir('{}/{}/{}'.format(book_name, dir, part))
+		new_lines.append('<li>{}</li>'.format(part))
+		add_part('{}/{}'.format(dir, part), new_lines)
+	if len(new_lines) > 0:
+		lines.append("<ul>")
+		lines.extend(new_lines)
+		lines.append("</ul>")
+
+
+if len(sys.argv) < 3:
+	exit(1)
+
+src = sys.argv[1]
+book_name = sys.argv[2]
+
+lines = ['<h1>{}</h1>'.format(book_name)]
+add_part('.', lines)
+
+with open('{}/index.html'.format(book_name), 'w') as file:
+	file.write(lines_begin.replace('%name%', book_name).replace('%dir%', '.'))
+	file.writelines(lines)
+	file.write(lines_end)

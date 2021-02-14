@@ -1,0 +1,29 @@
+#!/bin/sh
+
+src=$1
+
+if [ -z "$src" ]; then
+	echo "Необходимо задать директорию с проектом книги"
+	return 1
+fi
+
+bookName=$2
+if [ -z "$bookName" ]; then
+	bookName=$(basename "$src")
+fi
+
+rm -rf "$bookName"
+if [ -f "$bookName" ] || [ -d "$bookName" ]; then
+	echo "Название $bookName не уникально!"
+	echo "Укажите вторым параметром уникальное название или запустите в другом каталоге"
+	return 1
+fi
+
+## Копирование файлов
+mkdir "$bookName"
+cp "$src/"*.css "$bookName"
+
+## Генерация index.html
+create-book-index "$src" "$bookName"
+
+## Генерация страниц разделов
