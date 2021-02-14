@@ -1,0 +1,132 @@
+#!/usr/bin/python3
+
+import sys
+import os
+import urllib3
+from bs4 import BeautifulSoup
+
+
+def get_page(url):
+    http = urllib3.PoolManager()
+    resp = http.request('GET', url)
+    return resp.data.decode('utf-8')
+
+
+def get_img(ref, img_dir, img_n):
+    print('Download "{}" ==> {}.png'.format(ref, img_n))
+    if not os.path.isdir(img_dir):
+        os.mkdir(img_dir)
+    http = urllib3.PoolManager()
+    request = http.request('GET', ref)
+    with open('{}/{}.png'.format(img_dir, img_n), 'wb') as file:
+        file.write(request.data)
+
+
+def clear_tag(line, tag):
+    res = line
+    i = res.find('<{}'.format(tag))
+    while i >= 0:
+        j = res.find('>', i)
+        res = res[0:i] + res[j+1:]
+        i = res.find('<{}'.format(tag))
+    res = res.replace('</{}>'.format(tag), '')
+    return res
+
+
+def join_code(res):
+    i = 0
+    while i < len(res):
+        if res[i].startswith("<code>"):
+            j = i + 1
+            while j < len(res) and res[j].startswith("<code>"):
+                j += 1
+            if j - 1 > i:
+                for k in range(i, j):
+                    res[k] = res[k].replace('<code>', '')
+                res.insert(i, '<code>')
+                res.insert(j + 1, '</code>')
+        i += 1
+    return res
+
+
+def get_book(data, img_dir):
+    img_n = 0
+    soup = BeautifulSoup(data, 'lxml')
+    for post in soup.find_all('div'):
+        if str(post).startswith('<div class="single_post"'):
+            res = ['<h>{}'.format(clear_tag(str(post.h1), 'h1'))]
+            for content in post.find_all('div'):
+                if str(content).startswith('<div class="post-single-content'):
+                    for par in content.find_all():
+                        if str(par).startswith('<div class="related-posts"'):
+                            break
+                        if str(par).startswith('<div id="player"'):
+                            break
+                        if str(par).startswith('<p>https://www.youtube.com'):
+                            continue
+                        if str(par).startswith('<div class="ez-toc-title-container"'):
+                            res.append('<content/>')
+                        # if str(par).startswith('<p class="western"'):
+                        if str(par).startswith('<p'):
+                            if str(par).startswith('<p class="ez-toc-title"'):
+                                continue
+                            p = clear_tag(str(par), 'p')
+                            if p.startswith('<iframe'):
+                                continue
+                            if p.startswith('<code class="user"'):
+                                continue
+                            if p.find('<img') >= 0:
+                                start = p.find('src=', p.find('<img')) + 5
+                                stop = p.find(' ', start) - 1
+                                ref = p[start:stop]
+                                img_n = img_n + 1
+                                get_img(ref, img_dir, img_n)
+                                res.append('<img/>')
+                                continue
+                            p = clear_tag(p, 'span')
+                            if p.startswith('<strong>'):
+                                p = clear_tag(p, 'strong')
+                                p = '<code>{}'.format(p)
+                            res.append(p)
+                        # if str(par).startswith('<h2 class="western"'):
+                        if str(par).startswith('<h2'):
+                            p = clear_tag(str(par), 'h2')
+                            p = clear_tag(p, 'span')
+                            res.append('<h2>{}'.format(p))
+                        if str(par).startswith('<h3'):
+                            p = clear_tag(str(par), 'h3')
+                            p = clear_tag(p, 'span')
+                            res.append('<h3>{}'.format(p))
+                        if str(par).startswith('<h4'):
+                            p = clear_tag(str(par), 'h4')
+                            p = clear_tag(p, 'span')
+                            res.append('<h4>{}'.format(p))
+                        if str(par).startswith('<ul>'):
+                            p = clear_tag(str(par), 'ul')
+                            p = clear_tag(p, 'li')
+                            res.append('<ul>\n{}\n</ul>'.format(p.strip()))
+                        # if str(par).startswith('<code class="user"'):
+                        if str(par).startswith('<code'):
+                            p = clear_tag(str(par), 'code')
+                            p = p.strip()
+                            if p.find('\n') >= 0:
+                                res.append('<code>\n{}\n</code>'.format(p.strip()))
+                            else:
+                                res.append('<code>{}'.format(p.strip()))
+                    break
+            res = join_code(res)
+            # res[1] = '<title>{}'.format(res[1])
+            return '\n'.join(res) + '\n'
+    return None
+
+
+if len(sys.argv) == 3:
+    url = sys.argv[1]
+    name = sys.argv[2]
+    data = get_book(get_page(url), '{}_files'.format(name))
+    if data is not None:
+        with open('{}.book'.format(name), 'w') as file:
+            file.write(data)
+    else:
+        print('ERROR: {}'.format(name))
+        exec(1)

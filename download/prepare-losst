@@ -1,0 +1,34 @@
+#!/usr/bin/python3
+
+import sys
+import os
+
+
+def clear_tag(line, tag):
+    res = line
+    i = res.find('<{}'.format(tag))
+    while i >= 0:
+        j = res.find('>', i)
+        res = res[0:i] + res[j + 1:]
+        i = res.find('<{}'.format(tag))
+    res = res.replace('</{}>'.format(tag), '')
+    return res
+
+
+if len(sys.argv) == 2:
+    ifile = sys.argv[1]
+    with open(ifile, 'r') as file:
+        data = file.read()
+    res = []
+    for line in data.split('\n'):
+        line = line.strip()
+        if line.startswith('<a href="'):
+            ref1 = 9
+            ref2 = line.find('" ', ref1)
+            title1 = line.find('title=', ref2) + 6
+            title2 = line.find('>', title1)
+            line = 'load-page-losst {} {}'.format(line[ref1:ref2], line[title1:title2])
+            if res.count(line) == 0:
+                res.append(line)
+    with open(ifile + '.out', 'w') as file:
+        file.write('\n'.join(res))
