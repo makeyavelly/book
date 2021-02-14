@@ -1,0 +1,128 @@
+#!/usr/bin/python3
+
+import sys
+import urllib3
+from bs4 import BeautifulSoup
+
+
+def remove_tag(line, tag, new_tag=''):
+    if new_tag == '':
+        return line.replace('<{}>'.format(tag), '').replace('</{}>'.format(tag), '')
+    return line.replace('<{}>'.format(tag), '<{}>'.format(new_tag)).replace('</{}>'.format(tag), '')
+
+
+def remove_all_tag(line):
+    res = remove_tag(line, 'p')
+    res = remove_tag(res, 'b')
+    res = remove_tag(res, 'br')
+    res = remove_tag(res, 'br/')
+    res = remove_tag(res, 'span class="w3-codespan"', 'u')
+    res = res.replace('</span>', '</u>')
+    for c in ['<pre class="w3-ex">', '</pre>']:
+        res = res.replace(c, '')
+    return '\n'.join([i.strip() for i in res.split('\n')]).strip()
+
+
+def clear_tag(line, tag):
+    res = line
+    i = res.find('<{}'.format(tag))
+    while i >= 0:
+        j = res.find('>', i)
+        res = res[0:i] + res[j+1:]
+        i = res.find('<{}'.format(tag))
+    res = res.replace('</{}>'.format(tag), '')
+    return res
+
+
+def clear_tag_params(line, tag):
+    res = line
+    i = res.find('<{} '.format(tag))
+    while i >= 0:
+        j = res.find('>', i)
+        res = res[0:i+len(tag)+1] + res[j:]
+        i = res.find('<{} '.format(tag))
+    return res
+
+
+def clear_code(line):
+    res = line
+    res = clear_tag(res, 'pre')
+    res = clear_tag(res, 'span')
+    return res.strip()
+
+
+def clear_list(line):
+    res = line
+    res = clear_tag(res, 'b')
+    res = clear_tag(res, 'li')
+    res = clear_tag_params(res, 'ul')
+    res = clear_tag_params(res, 'ol')
+    return '\n'.join(list(filter(lambda x: x != '', [i.strip() for i in res.split('\n')]))).strip()
+
+
+def get_page(url):
+    http = urllib3.PoolManager()
+    resp = http.request('GET', url)
+    return resp.data.decode('utf-8')
+
+
+def get_book(data):
+    soup = BeautifulSoup(data, 'lxml')
+    for div in soup.find_all('div'):
+        if str(div).startswith('<div class="main-panel"'):
+            soup = BeautifulSoup(str(div), 'lxml')
+            res = [remove_tag(str(soup.h1), 'h1', 'h')]
+            is_find_title = False
+            for p in soup.find_all():
+                if str(p).startswith('<p class="subHead"'):
+                    is_find_title = True
+                    title = str(p).replace('<p class="subHead">', '').replace('</p>', '')
+                    title = remove_tag(title, 'b')
+                    title = remove_tag(title, 'br')
+                    title = remove_tag(title, 'br/')
+                    title = title.replace('\n', ' ').strip()
+                    res.append('<title>{}'.format(title))
+                    continue
+                if not str(p).replace('\n', '').startswith('<p>Reference:') and not str(p).replace('\n', '').startswith(
+                        '<p>References:') and not str(p).replace('\n', '').startswith('<p><b>Reference:') and not str(
+                        p).replace('\n', '').startswith('<p><b>References:') and not str(p).startswith(
+                        '<div class="w3-padding'):
+                    if is_find_title:
+                        if str(p).startswith('<h2>'):
+                            res.append(str(p).replace('</h2>', ''))
+                        if str(p).startswith('<h3>'):
+                            res.append(str(p).replace('</h3>', ''))
+                        if str(p).startswith('<h4>'):
+                            res.append(str(p).replace('</h4>', ''))
+                        if str(p).startswith('<h5>'):
+                            res.append(str(p).replace('</h5>', ''))
+                        elif str(p).startswith('<p>'):
+                            res.append(remove_all_tag(str(p)).replace('\n', ' '))
+                        elif str(p).startswith('<ol') or str(p).startswith('<ul'):
+                            if str(p.parent).startswith('<li') or str(p.parent).startswith('<ul') or str(
+                                    p.parent).startswith('<ol'):
+                                pass
+                            else:
+                                res.append(clear_list(str(p)))
+                        elif str(p).startswith('<pre class="w3-ex">'):
+                            res.append('<code>\n{}\n</code>'.format(remove_all_tag(str(p))))
+                        elif str(p).startswith('<pre class="i3-code">'):
+                            res.append('<code>\n{}\n</code>'.format(clear_code(str(p))))
+                        elif str(p).startswith('<pre class="w3-output">'):
+                            res.append('<code>\n{}\n</code>'.format(clear_code(str(p))))
+                    continue
+                break
+            return '\n'.join(res) + '\n'
+    return None
+
+
+if len(sys.argv) == 3:
+    url = sys.argv[1]
+    name = sys.argv[2]
+    data = get_book(get_page(url))
+    if data is not None:
+        with open('{}.book'.format(name), 'w') as file:
+            file.write(data)
+    else:
+        print('ERROR: {}'.format(name))
+        exec(1)
