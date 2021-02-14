@@ -1,0 +1,41 @@
+#!/usr/bin/python3
+
+import sys
+import urllib3
+from bs4 import BeautifulSoup
+
+
+def get_page(url):
+    http = urllib3.PoolManager()
+    resp = http.request('GET', url)
+    return resp.data.decode('utf-8')
+
+
+def get_book(data):
+    soup = BeautifulSoup(data, 'lxml')
+    for div in soup.find_all('div'):
+        if str(div).startswith('<div itemprop="description"'):
+            res = str(div).split('\n')[1:-1]
+            res = '\n'.join(res)
+            res = res.replace('<h1>', '<h>').replace('</h1>', '')
+            res = res.replace('<blockquote>', '<title>').replace('</blockquote>', '')
+            res = res.replace('<p>', '').replace('</p>', '')
+            res = res.replace('<ul>', '').replace('</ul>', '')
+            res = res.replace('<li>', '').replace('</li>', '')
+            res = res.replace('<code>', '<code>$ ').replace('</code>', '')
+            res = '\n'.join(list(filter(lambda x: x.strip() != '', res.split('\n')))) + '\n'
+            res = res.replace('<title>\n', '<title>')
+            return res
+    return None
+
+
+if len(sys.argv) == 3:
+    url = sys.argv[1]
+    name = sys.argv[2]
+    data = get_book(get_page(url))
+    if data is not None:
+        with open('{}.book'.format(name), 'w') as file:
+            file.write(data)
+    else:
+        print('ERROR: {}'.format(name))
+        exec(1)
